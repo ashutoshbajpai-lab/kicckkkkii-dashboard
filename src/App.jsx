@@ -66,7 +66,6 @@ export default function App() {
   const [batches] = useState(settlementBatches);
   const [activeModalTxn, setActiveModalTxn] = useState(null);
   const [activeModalSettlement, setActiveModalSettlement] = useState(null);
-  const [activeBatch, setActiveBatch] = useState(null);
   const [team, setTeam] = useState(initialTeam);
   const [logs, setLogs] = useState(initialSystemLogs);
 
@@ -2950,13 +2949,12 @@ export default function App() {
       </div>
 
       {/* Modals */}
-      {activeBatch && <BatchTransactionsModal batch={activeBatch} onClose={() => setActiveBatch(null)} />}
       {activeModalSettlement && <SettlementDetailsModal batch={activeModalSettlement} onClose={() => setActiveModalSettlement(null)} />}
       {activeModalTxn && <TransactionDetailsModal txn={activeModalTxn} onClose={() => setActiveModalTxn(null)} onDrillToSettlement={(batchId) => { 
         setActiveModalTxn(null); 
         setActivePage('settlements');
         const b = batches.find(x => x.id === batchId);
-        if (b) setActiveBatch(b); 
+        if (b) setActiveModalSettlement(b); 
       }} />}
       <ReceiptModal />
       <AddTeamModal />
