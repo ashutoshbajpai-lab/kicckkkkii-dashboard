@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Info, LayoutDashboard, School, CreditCard, Wallet, BarChart3, Users,
   Activity, HelpCircle, LogOut, Search, Bell, Database,
@@ -1287,7 +1287,7 @@ export default function App() {
                   if (b.mode !== settlModeFilter) return false;
                   if (settlSearch) {
                     const q = settlSearch.toLowerCase();
-                    if (!b.utr.toLowerCase().includes(q) && !(b.bankAccount || '').toLowerCase().includes(q) && !(b.bankName || '').toLowerCase().includes(q)) return false;
+                    if (!(b.utr || '').toLowerCase().includes(q) && !(b.bankAccount || '').toLowerCase().includes(q) && !(b.bankName || '').toLowerCase().includes(q)) return false;
                   }
                   if (settlDateStart && b.date < settlDateStart) return false;
                   if (settlDateEnd && b.date > settlDateEnd + 'T99') return false;
