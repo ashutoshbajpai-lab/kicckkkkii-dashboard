@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import {
-  LayoutDashboard, School, CreditCard, Wallet, BarChart3, Users,
+  Info, LayoutDashboard, School, CreditCard, Wallet, BarChart3, Users,
   Activity, HelpCircle, LogOut, Search, Bell, Database,
   Eye, EyeOff, Trash2, ArrowUpRight, ArrowDownRight,
   X, FileText, UserPlus, Download, CheckCircle, Clock,
@@ -9,7 +9,7 @@ import {
   RefreshCw, BookOpen, Zap
 } from 'lucide-react';
 import {
-  initialInstitutes, initialTransactions, initialSettlements,
+  initialInstitutes, initialTransactions, initialSettlements, settlementBatches,
   initialTeam, initialSystemLogs, geographicDistribution
 } from './mockData';
 
@@ -36,11 +36,18 @@ const modeBadge = (mode) => {
 };
 
 const statusBadge = (s) => {
-  if (s === 'Success' || s === 'Settled') return <span className="badge badge-success">{s}</span>;
-  if (s === 'Pending') return <span className="badge badge-pending">{s}</span>;
-  if (s === 'Failed') return <span className="badge badge-failed">{s}</span>;
-  if (s === 'Active') return <span className="badge badge-active">{s}</span>;
-  return <span className="badge badge-inactive">{s}</span>;
+  if (!s) return null;
+  const v = s.toString();
+  if (v === 'Success' || v === 'SETTLED') return <span className="badge badge-settled">{v}</span>;
+  if (v === 'Settled') return <span className="badge badge-settled">Settled</span>;
+  if (v === 'Pending') return <span className="badge badge-pending">Pending</span>;
+  if (v === 'Failed') return <span className="badge badge-failed">Failed</span>;
+  if (v === 'Active') return <span className="badge badge-active">Active</span>;
+  if (v === 'Debited') return <span className="badge badge-debited">Debited</span>;
+  if (v === 'Ongoing') return <span className="badge badge-ongoing">Ongoing</span>;
+  if (v === 'Overdue') return <span className="badge badge-overdue">Overdue</span>;
+  if (v === 'Completed') return <span className="badge badge-completed">Completed</span>;
+  return <span className="badge badge-inactive">{v}</span>;
 };
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
@@ -56,6 +63,10 @@ export default function App() {
   const [institutes, setInstitutes] = useState(initialInstitutes);
   const [transactions] = useState(initialTransactions);
   const [settlements] = useState(initialSettlements);
+  const [batches] = useState(settlementBatches);
+  const [activeModalTxn, setActiveModalTxn] = useState(null);
+  const [activeModalSettlement, setActiveModalSettlement] = useState(null);
+  const [activeBatch, setActiveBatch] = useState(null);
   const [team, setTeam] = useState(initialTeam);
   const [logs, setLogs] = useState(initialSystemLogs);
 
@@ -81,7 +92,7 @@ export default function App() {
   const [overviewDateEnd, setOverviewDateEnd] = useState('');
 
   // Transactions page filters
-  const [txnModeFilter, setTxnModeFilter] = useState('All');
+  const [txnModeFilter, setTxnModeFilter] = useState('PG');
   const [txnStatusFilter, setTxnStatusFilter] = useState('All');
   const [txnInstFilter, setTxnInstFilter] = useState('All');
   const [txnDateStart, setTxnDateStart] = useState('');
@@ -89,9 +100,12 @@ export default function App() {
   const [txnDisbStart, setTxnDisbStart] = useState('');
   const [txnDisbEnd, setTxnDisbEnd] = useState('');
   const [txnSearch, setTxnSearch] = useState('');
+  const [txnUtrFilter, setTxnUtrFilter] = useState('');
+  const [drillTxnMode, setDrillTxnMode] = useState('PG');
+  const [drillSettlMode, setDrillSettlMode] = useState('All');
 
   // Settlements page filters
-  const [settlModeFilter, setSettlModeFilter] = useState('All');
+  const [settlModeFilter, setSettlModeFilter] = useState('PG');
   const [settlInstFilter, setSettlInstFilter] = useState('All');
   const [settlDateStart, setSettlDateStart] = useState('');
   const [settlDateEnd, setSettlDateEnd] = useState('');
@@ -229,9 +243,10 @@ export default function App() {
       if (txnInstFilter !== 'All' && t.instituteId !== txnInstFilter) return false;
       if (txnDateStart && t.createdAt < txnDateStart) return false;
       if (txnDateEnd && t.createdAt > txnDateEnd + 'T99') return false;
-      // Disbursement filter — only applicable for EMI
       if (txnDisbStart && t.paymentMode === 'EMI' && t.disbursementDate && t.disbursementDate < txnDisbStart) return false;
       if (txnDisbEnd && t.paymentMode === 'EMI' && t.disbursementDate && t.disbursementDate > txnDisbEnd) return false;
+      // UTR filter — used when drilling down from a settlement row
+      if (txnUtrFilter && t.settlementUtr !== txnUtrFilter) return false;
       if (txnSearch) {
         const q = txnSearch.toLowerCase();
         if (!t.studentName.toLowerCase().includes(q) &&
@@ -240,7 +255,7 @@ export default function App() {
       }
       return true;
     });
-  }, [transactions, txnModeFilter, txnStatusFilter, txnInstFilter, txnDateStart, txnDateEnd, txnDisbStart, txnDisbEnd, txnSearch]);
+  }, [transactions, txnModeFilter, txnStatusFilter, txnInstFilter, txnDateStart, txnDateEnd, txnDisbStart, txnDisbEnd, txnSearch, txnUtrFilter]);
 
   // Transactions KPIs
   const txnKPIs = useMemo(() => {
@@ -260,7 +275,7 @@ export default function App() {
   // Filtered settlements
   const filteredSettlements = useMemo(() => {
     return settlements.filter(s => {
-      if (settlModeFilter !== 'All' && s.paymentMode !== settlModeFilter) return false;
+      if (s.paymentMode !== settlModeFilter) return false;
       if (settlInstFilter !== 'All' && s.instituteId !== settlInstFilter) return false;
       if (settlDateStart && s.settlementDate < settlDateStart) return false;
       if (settlDateEnd && s.settlementDate > settlDateEnd) return false;
@@ -442,7 +457,7 @@ export default function App() {
       <div className="kpi-grid">
         <div className="kpi-card">
           <div className="kpi-row">
-            <span className="kpi-label">Total GMV Settled</span>
+            <span className="kpi-label">Total Amount Settled</span>
             <div className="kpi-icon" style={{ background: 'rgba(37,99,235,0.15)' }}>
               <TrendingUp size={18} color="var(--accent-indigo)" />
             </div>
@@ -511,7 +526,7 @@ export default function App() {
         <div className="card">
           <div className="card-header">
             <div>
-              <h3 className="card-title">Month-wise GMV Trend</h3>
+              <h3 className="card-title">Month-wise Settlement Trend</h3>
               <p className="card-subtitle">Academic calendar — all payment modes</p>
             </div>
           </div>
@@ -540,7 +555,7 @@ export default function App() {
         {/* GMV Pie & Geographic */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <div className="card" style={{ flex: 1 }}>
-            <h3 className="card-title">GMV by Payment Mode</h3>
+            <h3 className="card-title">Settlement by Payment Mode</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
               <svg viewBox="0 0 100 100" width={90} height={90} style={{ flexShrink: 0 }}>
                 <circle cx="50" cy="50" r="36" fill="none" stroke="var(--accent-rose)" strokeWidth="18" strokeDasharray="160 226" />
@@ -555,7 +570,7 @@ export default function App() {
             </div>
           </div>
           <div className="card" style={{ flex: 1 }}>
-            <h3 className="card-title" style={{ fontSize: '0.9rem' }}>Geographic Spread</h3>
+            <h3 className="card-title" style={{ fontSize: '0.9rem' }}>Institute Type</h3>
             {geographicDistribution.map(g => (
               <div key={g.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.825rem', padding: '0.375rem 0', borderBottom: '1px solid var(--border-color)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><MapPin size={13} color="var(--accent-rose)" /><span>{g.region}</span></div>
@@ -572,7 +587,7 @@ export default function App() {
       {/* Top GILE leaderboard */}
       <div className="card">
         <div className="card-header">
-          <h3 className="card-title">Top Performing GILE — by GMV</h3>
+          <h3 className="card-title">Top Performing GILE — by Amount</h3>
           <span className="kpi-sub">Click a row to view institute profile</span>
         </div>
         <div className="table-wrap">
@@ -583,7 +598,7 @@ export default function App() {
                 <th>GILE Identifier</th>
                 <th>Location</th>
                 <th>Students</th>
-                <th>Total GMV</th>
+                <th>Total Amount</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -608,6 +623,339 @@ export default function App() {
     </div>
   );
 
+  
+  const TransactionDetailsModal = ({ txn, onClose, onDrillToSettlement }) => {
+    const [modalTab, setModalTab] = useState('Details');
+    if (!txn) return null;
+    
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 850 }}>
+          <div className="modal-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+            <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              More Details
+            </h3>
+            <button className="btn-icon" onClick={onClose}><X size={18} /></button>
+          </div>
+          
+          <div style={{ padding: '0 1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+             <button className={`tab-btn ${modalTab === 'Details' ? 'active' : ''}`} onClick={() => setModalTab('Details')} style={{ padding: '0.5rem 0', background: 'transparent', border: 'none', borderBottom: modalTab === 'Details' ? '2px solid var(--accent-indigo)' : '2px solid transparent', color: modalTab === 'Details' ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: modalTab === 'Details' ? 600 : 400, cursor: 'pointer' }}>Details</button>
+             {txn.paymentMode === 'PG' && <button className={`tab-btn ${modalTab === 'Transactions' ? 'active' : ''}`} onClick={() => setModalTab('Transactions')} style={{ padding: '0.5rem 0', background: 'transparent', border: 'none', borderBottom: modalTab === 'Transactions' ? '2px solid var(--accent-indigo)' : '2px solid transparent', color: modalTab === 'Transactions' ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: modalTab === 'Transactions' ? 600 : 400, cursor: 'pointer' }}>Transactions</button>}
+             <button className={`tab-btn ${modalTab === 'Notes' ? 'active' : ''}`} onClick={() => setModalTab('Notes')} style={{ padding: '0.5rem 0', background: 'transparent', border: 'none', borderBottom: modalTab === 'Notes' ? '2px solid var(--accent-indigo)' : '2px solid transparent', color: modalTab === 'Notes' ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: modalTab === 'Notes' ? 600 : 400, cursor: 'pointer' }}>{txn.paymentMode === 'PG' ? 'Other Notes' : 'Notes'}</button>
+          </div>
+
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingTop: '1.5rem' }}>
+            {txn.paymentMode === 'Auto-Debit' ? (
+              modalTab === 'Details' ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Payment ID:</span><span style={{ fontWeight: 500 }}>{txn.paymentId || txn.id}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Student Status:</span><span style={{ fontWeight: 500 }}>ACTIVE</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Customer Email Address:</span><span style={{ fontWeight: 500 }}>{txn.studentEmail || 'ashvini@gmail.com'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Settlement UTR:</span><span style={{ fontWeight: 500 }}>{txn.settlementUtr || '-'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Location:</span><span style={{ fontWeight: 500 }}>Powai</span></div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Primary Student Identifier:</span><span style={{ fontWeight: 500 }}>{txn.studentName}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Student GR no/Bus form no:</span><span style={{ fontWeight: 500 }}>-</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>UMRN:</span><span style={{ fontWeight: 500 }}>-</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Transaction Time:</span><span style={{ fontWeight: 500 }}>{new Date(txn.createdAt).toLocaleString()}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Board:</span><span style={{ fontWeight: 500 }}>IB</span></div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Customer Phone No:</span><span style={{ fontWeight: 500 }}>{txn.studentPhone || '9436565650'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Admission Number:</span><span style={{ fontWeight: 500 }}>-</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Amount Debited:</span><span style={{ fontWeight: 500 }}>{fmtINR(txn.amount)}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Institute Name:</span><span style={{ fontWeight: 500 }}>{txn.instituteName}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Status:</span><span style={{ fontWeight: 500 }}>{txn.status === 'Success' ? 'Debited' : txn.status}</span></div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', fontSize: '0.85rem' }}>
+                  <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Payment Page Slug:</span><span style={{ fontWeight: 500 }}>Class_1A_Fees</span></div>
+                  <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Student Id:</span><span style={{ fontWeight: 500 }}>{txn.studentId || txn.studentName}</span></div>
+                  <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Customer Mobile:</span><span style={{ fontWeight: 500 }}>{txn.studentPhone || '9436565650'}</span></div>
+                </div>
+              )
+            ) : txn.paymentMode === 'PG' ? (
+              modalTab === 'Details' ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Reference ID :</span><span style={{ fontWeight: 500, fontFamily: 'monospace', fontSize: '0.8rem' }}>{txn.id}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Institute :</span><span style={{ fontWeight: 500 }}>{txn.instituteName}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Board :</span><span style={{ fontWeight: 500 }}>{txn.board || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Class :</span><span style={{ fontWeight: 500 }}>{txn.studentClass || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Parent Mobile :</span><span style={{ fontWeight: 500 }}>{txn.studentPhone || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Service Charge :</span><span style={{ fontWeight: 500 }}>₹{txn.serviceCharge ?? 0}</span></div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Student Name :</span><span style={{ fontWeight: 500 }}>{txn.studentName}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Location :</span><span style={{ fontWeight: 500 }}>{txn.location || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Parent Name :</span><span style={{ fontWeight: 500 }}>{txn.parentName || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Fee Period :</span><span style={{ fontWeight: 500 }}>{txn.feeHeader || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Amount :</span><span style={{ fontWeight: 600 }}>{fmtINR(txn.amount)}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Service Tax :</span><span style={{ fontWeight: 500 }}>₹{txn.serviceTax ?? 0}</span></div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Student ID :</span><span style={{ fontWeight: 500 }}>{txn.studentId}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Parent Email :</span><span style={{ fontWeight: 500 }}>{txn.parentEmail || txn.studentEmail || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Payment Amount :</span><span style={{ fontWeight: 600 }}>{fmtINR(txn.amount)}</span></div>
+                  </div>
+                </div>
+              ) : modalTab === 'Transactions' ? (
+                <div style={{ fontSize: '0.85rem' }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Order ID</th>
+                        <th>Payment ID</th>
+                        <th>Bank Reference ID</th>
+                        <th>Settlement Amount</th>
+                        <th>Settlement UTR</th>
+                        <th>Payment Method</th>
+                        <th>Paid On</th>
+                        <th>Settled On</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{txn.orderId || '—'}</td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{txn.paymentId || '—'}</td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{txn.bankRefId || '—'}</td>
+                        <td><strong>{fmtINR(txn.amount)}</strong></td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--accent-indigo)' }}>{txn.settlementUtr || '—'}</td>
+                        <td><span style={{ background: 'var(--bg-tertiary)', padding: '2px 8px', borderRadius: 4, fontSize: '0.78rem', fontWeight: 500 }}>{txn.paymentMethod || txn.vendor || '—'}</span></td>
+                        <td style={{ fontSize: '0.78rem' }}>{txn.paidOn ? new Date(txn.paidOn).toLocaleString() : (txn.createdAt ? new Date(txn.createdAt).toLocaleString() : '—')}</td>
+                        <td style={{ fontSize: '0.78rem' }}>{txn.settledAt ? new Date(txn.settledAt).toLocaleString() : '—'}</td>
+                        <td>{statusBadge(txn.status === 'Success' ? 'Settled' : txn.status)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', fontSize: '0.85rem' }}>
+                  <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Payment Page Slug :</span><span style={{ fontWeight: 500, fontFamily: 'monospace', fontSize: '0.8rem' }}>{txn.paymentPageSlug || '—'}</span></div>
+                  <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Student ID :</span><span style={{ fontWeight: 500 }}>{txn.studentId || '—'}</span></div>
+                  <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Customer Mobile :</span><span style={{ fontWeight: 500 }}>{txn.customerMobile || txn.studentPhone || '—'}</span></div>
+                </div>
+              )
+            ) : (
+              // EMI Fallback (Original UI)
+              modalTab === 'Details' ? (
+                <>
+                  <div className="card" style={{ padding: '1rem', background: 'var(--bg-secondary)' }}>
+                    <h4 style={{ marginBottom: '1rem', color: 'var(--accent-indigo)', fontSize: '0.95rem' }}>Applicant Details</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.25rem', fontSize: '0.85rem' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Applicant Name:</span><span style={{ fontWeight: 500 }}>{txn.studentName || 'N/A'}</span></div>
+                        <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Application ID:</span><span style={{ fontWeight: 500 }}>{txn.applicationId || txn.id}</span></div>
+                        <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Student Name:</span><span style={{ fontWeight: 500 }}>{txn.studentName}</span></div>
+                        <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Primary Student Identifier:</span><span style={{ fontWeight: 500 }}>{txn.studentId}</span></div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Repayment status:</span><span style={{ fontWeight: 500 }}>{txn.repaymentStatus || 'Ongoing'}</span></div>
+                        <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Class:</span><span style={{ fontWeight: 500 }}>{txn.studentClass || 'N/A'}</span></div>
+                        <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Group:</span><span style={{ fontWeight: 500 }}>-</span></div>
+                        <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Institute:</span><span style={{ fontWeight: 500 }}>{txn.instituteName}</span></div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Location:</span><span style={{ fontWeight: 500 }}>Powai</span></div>
+                        <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Education / Board:</span><span style={{ fontWeight: 500 }}>IB</span></div>
+                        <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Application Date:</span><span style={{ fontWeight: 500 }}>{new Date(txn.createdAt).toLocaleDateString()}</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="card" style={{ padding: '1rem', background: 'var(--bg-secondary)' }}>
+                    <h4 style={{ marginBottom: '1rem', color: 'var(--accent-emerald)', fontSize: '0.95rem' }}>Disbursement</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.25rem', fontSize: '0.85rem' }}>
+                      <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Amount:</span><span style={{ fontWeight: 500 }}>{fmtINR(txn.amount)}</span></div>
+                      <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Settlement UTR:</span><span style={{ fontWeight: 500 }}>{txn.settlementUtr || txn.batchSettlementId || 'Pending'}</span></div>
+                      <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Bank Account Number:</span><span style={{ fontWeight: 500 }}>XXXXXX1234</span></div>
+                      <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>IFSC:</span><span style={{ fontWeight: 500 }}>HDFC0001234</span></div>
+                      <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Bank Name:</span><span style={{ fontWeight: 500 }}>HDFC Bank</span></div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No additional notes for this transaction.</div>
+              )
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const SettlementDetailsModal = ({ batch, onClose }) => {
+    if (!batch) return null;
+    const batchTxns = transactions.filter(t => t.settlementUtr === batch.utr || t.batchSettlementId === batch.utr);
+    
+    if (batch.mode === 'EMI') {
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 850 }}>
+            <div className="modal-header">
+              <div>
+                <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>Settlement Details {statusBadge(batch.status || 'Settled')}</h3>
+                <div className="modal-subtitle">UTR: <span style={{ fontFamily: 'monospace', color: 'var(--accent-indigo)' }}>{batch.utr}</span></div>
+              </div>
+              <button className="modal-close" onClick={onClose}><X size={18} /></button>
+            </div>
+            <div className="modal-body" style={{ paddingTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              
+              {/* Tracker visibility */}
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-secondary)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-emerald)', fontSize: '0.8rem', fontWeight: 600 }}><CheckCircle size={14} /> Created</div>
+                <div style={{ flex: 1, height: 2, background: 'var(--accent-emerald)', opacity: 0.3 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-emerald)', fontSize: '0.8rem', fontWeight: 600 }}><CheckCircle size={14} /> Approved</div>
+                <div style={{ flex: 1, height: 2, background: 'var(--accent-emerald)', opacity: 0.3 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: batch.status === 'Settled' ? 'var(--accent-emerald)' : 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>
+                  {batch.status === 'Settled' ? <CheckCircle size={14} /> : <div style={{width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--text-muted)'}} />} Settled
+                </div>
+              </div>
+
+              {/* Applicant Details */}
+              <div>
+                <h4 style={{ fontSize: '1rem', fontWeight: 600, borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Applicant Details</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Applicant Name:</span><span style={{ fontWeight: 500 }}>{batch.studentName || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Student Name:</span><span style={{ fontWeight: 500 }}>{batch.studentName || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Class:</span><span style={{ fontWeight: 500 }}>{batch.class || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Location:</span><span style={{ fontWeight: 500 }}>{batch.location || '—'}</span></div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Application ID:</span><span style={{ fontWeight: 500 }}>{batch.applicationId || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Primary Student Identifier:</span><span style={{ fontWeight: 500 }}>{batch.studentId || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Group:</span><span style={{ fontWeight: 500 }}>{batch.group || '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Education / Board:</span><span style={{ fontWeight: 500 }}>{batch.board || '—'}</span></div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Application Date:</span><span style={{ fontWeight: 500 }}>{batch.applicationDate ? new Date(batch.applicationDate).toLocaleString() : '—'}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Repayment status:</span><span>{statusBadge(batch.repaymentStatus || 'Ongoing')}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Institute:</span><span style={{ fontWeight: 500 }}>{batch.institute || '—'}</span></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Disbursement */}
+              <div>
+                <h4 style={{ fontSize: '1rem', fontWeight: 600, borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Disbursement</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem', fontSize: '0.85rem', background: 'var(--bg-secondary)', padding: '1rem', borderRadius: 8 }}>
+                  <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Amount:</span><span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{fmtINR(batch.amount)}</span></div>
+                  <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Settlement UTR:</span><span style={{ fontWeight: 500, fontFamily: 'monospace', color: 'var(--accent-indigo)' }}>{batch.utr}</span></div>
+                  <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Bank Account Number:</span><span style={{ fontWeight: 500 }}>{batch.bankAccount || '—'}</span></div>
+                  <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>IFSC:</span><span style={{ fontWeight: 500 }}>{batch.ifsc || '—'}</span></div>
+                  <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Bank Name:</span><span style={{ fontWeight: 500 }}>{batch.bankName || '—'}</span></div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 950 }}>
+          <div className="modal-header">
+            <div>
+              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>Settlement Batch {statusBadge(batch.status || 'Settled')}</h3>
+              <div className="modal-subtitle">UTR: <span style={{ fontFamily: 'monospace', color: 'var(--accent-indigo)' }}>{batch.utr}</span></div>
+            </div>
+            <button className="modal-close" onClick={onClose}><X size={18} /></button>
+          </div>
+          <div className="modal-body" style={{ paddingTop: '1.5rem' }}>
+            <div className="card" style={{ padding: '1rem', background: 'var(--bg-secondary)', marginBottom: '0.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1.25rem', fontSize: '0.85rem' }}>
+                <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Total Amount:</span><span style={{ fontWeight: 600, fontSize: '1rem' }}>{fmtINR(batch.amount)}</span></div>
+                <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Mode:</span><span>{modeBadge(batch.mode)}</span></div>
+                <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Bank Name:</span><span style={{ fontWeight: 500 }}>{batch.bankName || 'N/A'}</span></div>
+                <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Bank Account:</span><span style={{ fontWeight: 500 }}>{batch.bankAccount || 'N/A'}</span></div>
+                <div><span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Settled On:</span><span style={{ fontWeight: 500 }}>{new Date(batch.date).toLocaleString()}</span></div>
+              </div>
+            </div>
+
+            <h4 style={{ margin: '0.5rem 0 0.5rem 0', fontSize: '0.95rem', fontWeight: 600 }}>Included Transactions ({batchTxns.length})</h4>
+            <div className="table-wrap" style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8 }}>
+              <table className="data-table">
+                <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-primary)', zIndex: 1 }}>
+                  <tr>
+                    {/* PG columns */}
+                    {(batch.mode === 'PG' || (!['PG','Auto-Debit'].includes(batch.mode))) && <>
+                      <th>Reference ID</th>
+                      <th>Student ID</th>
+                      <th>Institute Details</th>
+                      <th>Amount Paid</th>
+                      <th>Payment Status</th>
+                      <th>Actions</th>
+                    </>}
+                    {/* Auto-Debit columns */}
+                    {batch.mode === 'Auto-Debit' && <>
+                      <th>Payment ID</th>
+                      <th>Student Details</th>
+                      <th>Institute Name</th>
+                      <th>Debited Amount</th>
+                      <th>Transaction Time</th>
+                      <th>Debit Status</th>
+                      <th>Settlement Status</th>
+                      <th>Actions</th>
+                    </>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {batchTxns.map(t => (
+                    <tr key={t.id}>
+                      {/* PG row */}
+                      {(batch.mode === 'PG' || (!['PG','Auto-Debit'].includes(batch.mode))) && <>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--accent-indigo)' }}>{t.id}</td>
+                        <td style={{ fontSize: '0.82rem', fontWeight: 500 }}>{t.studentId}</td>
+                        <td>
+                          <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{t.instituteName}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t.location || '—'} · {t.board || '—'}</div>
+                        </td>
+                        <td><strong>{fmtINR(t.amount)}</strong></td>
+                        <td>{statusBadge(t.status === 'Success' ? 'SETTLED' : t.status)}</td>
+                        <td>
+                          <button className="btn-icon" title="View Details" onClick={() => setActiveModalTxn(t)}>
+                            <Eye size={16} color="var(--accent-indigo)" />
+                          </button>
+                        </td>
+                      </>}
+                      {/* Auto-Debit row */}
+                      {batch.mode === 'Auto-Debit' && <>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--accent-indigo)' }}>{t.paymentId || t.id}</td>
+                        <td>
+                          <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{t.studentName}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t.studentId}</div>
+                        </td>
+                        <td style={{ fontSize: '0.82rem' }}>{t.instituteName}</td>
+                        <td><strong>{fmtINR(t.amount)}</strong></td>
+                        <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t.paidOn ? new Date(t.paidOn).toLocaleString() : new Date(t.createdAt).toLocaleString()}</td>
+                        <td>{statusBadge(t.status === 'Success' ? 'Debited' : t.status)}</td>
+                        <td>{statusBadge(t.settledAt ? 'Settled' : 'Pending')}</td>
+                        <td>
+                          <button className="btn-icon" title="View Details" onClick={() => setActiveModalTxn(t)}>
+                            <Eye size={16} color="var(--accent-indigo)" />
+                          </button>
+                        </td>
+                      </>}
+                    </tr>
+                  ))}
+                  {batchTxns.length === 0 && (
+                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No transactions found for this UTR.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ─── SECTION: TRANSACTIONS (Top-level page) ──────────────────────────────────
   const TransactionsPage = () => (
     <div className="page-enter" style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
@@ -627,50 +975,7 @@ export default function App() {
         }
       />
 
-      {/* Page-specific filter bar */}
-      <div className="filter-bar">
-        <div className="filter-group">
-          <label className="filter-label">Student / TXN ID Search</label>
-          <input className="filter-input" placeholder="Search name, ID…" value={txnSearch}
-            onChange={e => setTxnSearch(e.target.value)} style={{ width: 200 }} />
-        </div>
-        <div className="filter-group">
-          <label className="filter-label">Payment Mode</label>
-          <select className="filter-select" value={txnModeFilter} onChange={e => setTxnModeFilter(e.target.value)}>
-            <option>All</option><option>EMI</option><option>PG</option><option>Auto-Debit</option>
-          </select>
-        </div>
-        <div className="filter-group">
-          <label className="filter-label">Status</label>
-          <select className="filter-select" value={txnStatusFilter} onChange={e => setTxnStatusFilter(e.target.value)}>
-            <option>All</option><option>Success</option><option>Pending</option><option>Failed</option>
-          </select>
-        </div>
-        <div className="filter-group">
-          <label className="filter-label">Institute</label>
-          <select className="filter-select" value={txnInstFilter} onChange={e => setTxnInstFilter(e.target.value)}>
-            <option value="All">All Institutes</option>
-            {institutes.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-          </select>
-        </div>
-        <div className="filter-group">
-          <label className="filter-label">Transaction Date</label>
-          <div className="filter-date-range">
-            <input type="date" className="filter-input" style={{ width: 135 }} value={txnDateStart} onChange={e => setTxnDateStart(e.target.value)} />
-            <span>to</span>
-            <input type="date" className="filter-input" style={{ width: 135 }} value={txnDateEnd} onChange={e => setTxnDateEnd(e.target.value)} />
-          </div>
-        </div>
-        {/* Disbursement filter — EMI Only */}
-        <div className="filter-group">
-          <label className="filter-label" style={{ color: 'var(--accent-indigo)' }}>EMI Disbursement Date</label>
-          <div className="filter-date-range">
-            <input type="date" className="filter-input" style={{ width: 135 }} value={txnDisbStart} onChange={e => setTxnDisbStart(e.target.value)} />
-            <span>to</span>
-            <input type="date" className="filter-input" style={{ width: 135 }} value={txnDisbEnd} onChange={e => setTxnDisbEnd(e.target.value)} />
-          </div>
-        </div>
-      </div>
+
 
       {/* KPI Cards */}
       <div className="kpi-grid">
@@ -707,86 +1012,167 @@ export default function App() {
       </div>
 
       {/* Academic volume curve */}
-      <div className="card">
+      <div className="card" style={{ maxWidth: '700px' }}>
         <div className="card-header">
           <h3 className="card-title">Academic Calendar Monthly Volume</h3>
-          <span className="kpi-sub" style={{ color: 'var(--accent-rose)', fontWeight: 600 }}>Bell curve — peaks at June admissions</span>
+          <span className="kpi-sub" style={{ color: 'var(--text-muted)' }}>Monthly transaction volume trend</span>
         </div>
-        <svg viewBox="0 0 800 120" width="100%" height="120" style={{ background: 'var(--bg-primary)', borderRadius: 8, padding: '8px 0' }}>
-          <defs>
-            <linearGradient id="bell-grad" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#3b82f6" />
-              <stop offset="55%" stopColor="#6366f1" />
-              <stop offset="100%" stopColor="#f43f5e" />
-            </linearGradient>
-          </defs>
-          <path d="M 40 105 C 100 100 160 90 220 82 T 360 50 T 430 20 T 500 50 T 620 88 T 760 105" fill="none" stroke="url(#bell-grad)" strokeWidth="3" />
-          <path d="M 40 105 C 100 100 160 90 220 82 T 360 50 T 430 20 T 500 50 T 620 88 T 760 105 L 760 115 L 40 115 Z" fill="rgba(37,99,235,0.05)" />
-          {['Jul','Sep','Nov','Jan','Mar','May','Jun (Peak)','Aug'].map((m, i) => (
-            <text key={m} x={40 + i * 102} y={118} fill={m.includes('Peak') ? 'var(--accent-rose)' : 'var(--text-muted)'} fontSize="9" fontWeight={m.includes('Peak') ? '700' : '400'}>{m}</text>
-          ))}
-        </svg>
+        <div style={{ padding: '1rem', background: 'var(--bg-primary)', borderRadius: 10 }}>
+          <svg viewBox="0 0 500 220" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
+            {/* Grid Lines */}
+            {[40, 80, 120, 160].map(y => (
+              <line key={y} x1="30" y1={y} x2="480" y2={y} stroke="var(--border-color)" strokeWidth="1" strokeDasharray="4 4" />
+            ))}
+            {/* Y Axis Labels */}
+            <text x="25" y="165" fontSize="10" fill="var(--text-muted)" textAnchor="end">0</text>
+            <text x="25" y="125" fontSize="10" fill="var(--text-muted)" textAnchor="end">5k</text>
+            <text x="25" y="85" fontSize="10" fill="var(--text-muted)" textAnchor="end">10k</text>
+            <text x="25" y="45" fontSize="10" fill="var(--text-muted)" textAnchor="end">15k</text>
+
+            {/* Line Chart */}
+            <path d="M 40,140 L 80,130 L 120,110 L 160,80 L 200,95 L 240,40 L 280,60 L 320,120 L 360,110 L 400,135 L 440,150 L 480,145" fill="none" stroke="var(--accent-indigo)" strokeWidth="3" />
+            
+            {/* Data Points */}
+            {[
+              {x: 40, y: 140}, {x: 80, y: 130}, {x: 120, y: 110}, {x: 160, y: 80}, {x: 200, y: 95}, {x: 240, y: 40},
+              {x: 280, y: 60}, {x: 320, y: 120}, {x: 360, y: 110}, {x: 400, y: 135}, {x: 440, y: 150}, {x: 480, y: 145}
+            ].map((p, i) => (
+              <circle key={i} cx={p.x} cy={p.y} r="4" fill="var(--bg-primary)" stroke="var(--accent-indigo)" strokeWidth="2" />
+            ))}
+
+            {/* Peak Marker */}
+            <circle cx="240" cy="40" r="5" fill="var(--accent-rose)" stroke="#fff" strokeWidth="2" />
+            <text x="240" y="28" fontSize="12" fill="var(--accent-rose)" fontWeight="700" textAnchor="middle">Peak</text>
+
+            {/* X Axis & Labels */}
+            <line x1="30" y1="160" x2="480" y2="160" stroke="var(--border-color)" strokeWidth="2" />
+            {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m, i) => (
+              <text key={m} x={40 + (i * 39.5)} y="180" fontSize="10" fill="var(--text-muted)" textAnchor="middle">{m}</text>
+            ))}
+          </svg>
+        </div>
       </div>
+
+      {/* UTR filter active banner */}
+      {txnUtrFilter && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 1rem', background: 'rgba(99,102,241,0.08)', border: '1px solid var(--accent-indigo)', borderRadius: 10, fontSize: '0.82rem' }}>
+          <span style={{ color: 'var(--accent-indigo)', fontWeight: 600 }}>Filtered by Settlement UTR:</span>
+          <span style={{ fontFamily: 'monospace' }}>{txnUtrFilter}</span>
+          <button onClick={() => setTxnUtrFilter('')} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}><X size={14} /></button>
+        </div>
+      )}
 
       {/* Transaction Listing */}
       <div className="card">
         <div className="card-header">
           <h3 className="card-title">Transaction Ledger</h3>
           <div className="switcher">
-            {['All','EMI','PG','Auto-Debit'].map(m => (
+            {['PG','Auto-Debit'].map(m => (
               <button key={m} className={`switch-btn ${txnModeFilter === m ? 'active' : ''}`} onClick={() => setTxnModeFilter(m)}>{m}</button>
             ))}
+          </div>
+        </div>
+        <div className="filter-bar" style={{ borderRadius: 0, border: 'none', borderBottom: '1px solid var(--border-color)', boxShadow: 'none', padding: '0 0 1rem 0' }}>
+          <div className="filter-group">
+            <label className="filter-label">Student / TXN ID Search</label>
+            <input className="filter-input" placeholder="Search name, ID…" value={txnSearch}
+              onChange={e => setTxnSearch(e.target.value)} style={{ width: 200 }} />
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Status</label>
+            <select className="filter-select" value={txnStatusFilter} onChange={e => setTxnStatusFilter(e.target.value)}>
+              <option>All</option><option>Success</option><option>Pending</option><option>Failed</option>
+            </select>
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Institute</label>
+            <select className="filter-select" value={txnInstFilter} onChange={e => setTxnInstFilter(e.target.value)}>
+              <option value="All">All Institutes</option>
+              {institutes.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+            </select>
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Transaction Date</label>
+            <div className="filter-date-range">
+              <input type="date" className="filter-input" style={{ width: 135 }} value={txnDateStart} onChange={e => setTxnDateStart(e.target.value)} />
+              <span>to</span>
+              <input type="date" className="filter-input" style={{ width: 135 }} value={txnDateEnd} onChange={e => setTxnDateEnd(e.target.value)} />
+            </div>
           </div>
         </div>
         <div className="table-wrap">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Txn ID</th>
-                <th>Student</th>
-                <th>Institute</th>
-                <th>Fee Header</th>
-                <th>Amount</th>
-                <th>Mode</th>
-                <th>Created On</th>
-                <th>Disbursement (EMI)</th>
-                <th>Status</th>
-                <th>Actions</th>
+                {/* PG columns */}
+                {txnModeFilter === 'PG' && <>
+                  <th>Reference ID</th>
+                  <th>Student ID</th>
+                  <th>Institute Details</th>
+                  <th>Amount Paid</th>
+                  <th>Payment Status</th>
+                  <th>Actions</th>
+                </> }
+                {/* Auto-Debit columns */}
+                {txnModeFilter === 'Auto-Debit' && <>
+                  <th>Payment ID</th>
+                  <th>Student Details</th>
+                  <th>Institute Name</th>
+                  <th>Debited Amount</th>
+                  <th>Transaction Time</th>
+                  <th>Debit Status</th>
+                  <th>Settlement Status</th>
+                  <th>Actions</th>
+                </> }
               </tr>
             </thead>
             <tbody>
               {filteredTxns.map(t => (
                 <tr key={t.id}>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--accent-indigo)' }}>{t.id}</td>
-                  <td>
-                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{t.studentName}</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      {t.studentId} · {unmaskPII ? t.studentPhone : maskPhone(t.studentPhone)}
-                    </div>
-                  </td>
-                  <td style={{ fontSize: '0.825rem' }}>{t.instituteName}</td>
-                  <td style={{ fontSize: '0.825rem' }}>{t.feeHeader}</td>
-                  <td><strong>{fmtINR(t.amount)}</strong></td>
-                  <td>{modeBadge(t.paymentMode)}</td>
-                  <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{fmtDate(t.createdAt)}</td>
-                  <td style={{ fontSize: '0.8rem' }}>
-                    {t.paymentMode === 'EMI'
-                      ? (t.disbursementDate ? <span style={{ color: 'var(--accent-indigo)', fontWeight: 600 }}>{t.disbursementDate}</span> : <span style={{ color: 'var(--text-muted)' }}>—</span>)
-                      : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.72rem' }}>N/A</span>
-                    }
-                  </td>
-                  <td>{statusBadge(t.status)}</td>
-                  <td>
-                    {t.status === 'Success' && (
-                      <button className="btn-sm" style={{ fontSize: '0.72rem', padding: '0.25rem 0.5rem' }} onClick={() => setReceiptTxn(t)}>
-                        <FileText size={12} />Receipt
+                  {/* PG row */}
+                  {txnModeFilter === 'PG' && <>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--accent-indigo)' }}>{t.id}</td>
+                    <td style={{ fontSize: '0.82rem', fontWeight: 500 }}>{t.studentId}</td>
+                    <td>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{t.instituteName}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t.location || '—'} · {t.board || '—'}</div>
+                    </td>
+                    <td><strong>{fmtINR(t.amount)}</strong></td>
+                    <td>{statusBadge(t.status === 'Success' ? 'SETTLED' : t.status)}</td>
+                    <td>
+                      <button className="btn-icon" title="View Details" onClick={() => setActiveModalTxn(t)}>
+                        <Eye size={16} color="var(--accent-indigo)" />
                       </button>
-                    )}
-                  </td>
+                    </td>
+                  </> }
+                  {/* Auto-Debit row */}
+                  {txnModeFilter === 'Auto-Debit' && <>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--accent-indigo)' }}>{t.paymentId || t.id}</td>
+                    <td>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{t.studentName}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t.studentId}</div>
+                    </td>
+                    <td style={{ fontSize: '0.82rem' }}>{t.instituteName}</td>
+                    <td><strong>{fmtINR(t.amount)}</strong></td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t.paidOn ? new Date(t.paidOn).toLocaleString() : new Date(t.createdAt).toLocaleString()}</td>
+                    <td>{statusBadge(t.status === 'Success' ? 'Debited' : t.status)}</td>
+                    <td>{statusBadge(t.settledAt ? 'Settled' : 'Pending')}</td>
+                    <td>
+                      <button className="btn-icon" title="View Details" onClick={() => setActiveModalTxn(t)}>
+                        <Eye size={16} color="var(--accent-indigo)" />
+                      </button>
+                    </td>
+                  </> }
                 </tr>
               ))}
               {!filteredTxns.length && (
-                <tr><td colSpan={10} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No transactions match current filters</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ fontSize: '2.5rem' }}>📂</span>
+                    <span style={{ fontSize: '0.95rem', fontWeight: 500 }}>No Transaction Data Available</span>
+                    {txnUtrFilter && <span style={{ fontSize: '0.8rem' }}>No transactions found for UTR: {txnUtrFilter}</span>}
+                  </div>
+                </td></tr>
               )}
             </tbody>
           </table>
@@ -796,162 +1182,185 @@ export default function App() {
   );
 
   // ─── SECTION: SETTLEMENTS (Top-level page) ───────────────────────────────────
-  const SettlementsPage = () => (
-    <div className="page-enter" style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
-      <PageHeader
-        title="Settlements"
-        subtitle="Settled funds transferred to institute bank accounts"
-        action={
-          <button className="btn-sm" onClick={() => exportCSV(filteredSettlements.map(s => ({
-            'Settlement ID': s.id, 'Txn Ref': s.txnId, 'Student Name': s.studentName, 'Student ID': s.studentId,
-            'Institute': s.instituteName, 'Fee Header': s.feeHeader, 'Amount (₹)': s.amount,
-            'Mode': s.paymentMode, 'Settlement Date': s.settlementDate,
-            'Disbursement Date': s.paymentMode === 'EMI' ? s.disbursementDate : 'N/A',
-            'UTR': s.utr, 'Bank Name': s.bankName, 'Account No': s.accountNo, 'IFSC': s.ifsc, 'Status': 'Settled'
-          })), 'Settlements.csv')}>
-            <Download size={14} /> Export CSV
-          </button>
-        }
-      />
+  const SettlementsPage = () => {
+    return (
+      <div className="page-enter" style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+        <PageHeader
+          title="Settlements"
+          subtitle="Settled funds transferred to institute bank accounts"
+          action={
+            <button className="btn-sm" onClick={() => exportCSV(batches.map(b => ({
+              'Batch ID': b.id, 'Mode': b.mode, 'Amount': b.amount, 'Date': b.date, 'UTR': b.utr, 'Status': b.status
+            })), 'Settlements.csv')}>
+              <Download size={14} /> Export CSV
+            </button>
+          }
+        />
 
-      {/* Page-specific filters */}
-      <div className="filter-bar">
-        <div className="filter-group">
-          <label className="filter-label">Student / UTR Search</label>
-          <input className="filter-input" placeholder="Name, student ID, UTR…" value={settlSearch}
-            onChange={e => setSettlSearch(e.target.value)} style={{ width: 200 }} />
-        </div>
-        <div className="filter-group">
-          <label className="filter-label">Payment Mode</label>
-          <select className="filter-select" value={settlModeFilter} onChange={e => setSettlModeFilter(e.target.value)}>
-            <option>All</option><option>EMI</option><option>PG</option><option>Auto-Debit</option>
-          </select>
-        </div>
-        <div className="filter-group">
-          <label className="filter-label">Institute</label>
-          <select className="filter-select" value={settlInstFilter} onChange={e => setSettlInstFilter(e.target.value)}>
-            <option value="All">All Institutes</option>
-            {institutes.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-          </select>
-        </div>
-        <div className="filter-group">
-          <label className="filter-label">Settlement Date</label>
-          <div className="filter-date-range">
-            <input type="date" className="filter-input" style={{ width: 135 }} value={settlDateStart} onChange={e => setSettlDateStart(e.target.value)} />
-            <span>to</span>
-            <input type="date" className="filter-input" style={{ width: 135 }} value={settlDateEnd} onChange={e => setSettlDateEnd(e.target.value)} />
-          </div>
-        </div>
-        {/* EMI-only disbursement filter */}
-        <div className="filter-group">
-          <label className="filter-label" style={{ color: 'var(--accent-indigo)' }}>EMI Disbursement Date</label>
-          <div className="filter-date-range">
-            <input type="date" className="filter-input" style={{ width: 135 }} value={settlDisbStart} onChange={e => setSettlDisbStart(e.target.value)} />
-            <span>to</span>
-            <input type="date" className="filter-input" style={{ width: 135 }} value={settlDisbEnd} onChange={e => setSettlDisbEnd(e.target.value)} />
-          </div>
-        </div>
-        <p style={{ fontSize: '0.7rem', color: 'var(--accent-amber)', fontWeight: 600, alignSelf: 'flex-end', paddingBottom: 4 }}>
-          ⚠ Disbursement filter applies to EMI only
-        </p>
-      </div>
 
-      {/* Settlement KPIs */}
-      <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))' }}>
-        <div className="kpi-card">
-          <span className="kpi-label">Total Settled Value</span>
-          <div className="kpi-value">{fmtINR(settlKPIs.total)}</div>
-          <p className="kpi-sub">Transferred to institutes</p>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Settlement Count</span>
-          <div className="kpi-value">{settlKPIs.count}</div>
-          <p className="kpi-sub">Individual settled records</p>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Unsettled Value</span>
-          <div className="kpi-value" style={{ color: 'var(--accent-amber)' }}>{fmtINR(settlKPIs.unsettled)}</div>
-          <p className="kpi-sub">Success txns pending settlement</p>
-        </div>
-        <div className="kpi-card">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <span className="kpi-label">Settlement Cycles</span>
-            <div style={{ fontSize: '0.775rem', color: 'var(--accent-cyan)' }}>PG: T+1</div>
-            <div style={{ fontSize: '0.775rem', color: 'var(--accent-purple)' }}>Auto-Debit: T+2</div>
-            <div style={{ fontSize: '0.775rem', color: 'var(--accent-indigo)' }}>EMI disbursement: T+3</div>
-          </div>
-        </div>
-      </div>
 
-      {/* Settlement Listing — transaction style with mode label & UTR */}
-      <div className="card">
-        <div className="card-header">
-          <h3 className="card-title">Settlement Records</h3>
-          <div className="switcher">
-            {['All','EMI','PG','Auto-Debit'].map(m => (
-              <button key={m} className={`switch-btn ${settlModeFilter === m ? 'active' : ''}`} onClick={() => setSettlModeFilter(m)}>{m}</button>
-            ))}
+        <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))' }}>
+          <div className="kpi-card">
+            <span className="kpi-label">Total Settled Value</span>
+            <div className="kpi-value">{fmtINR(batches.reduce((sum, b) => sum + b.amount, 0))}</div>
+            <p className="kpi-sub">Transferred to institutes</p>
+          </div>
+          <div className="kpi-card">
+            <span className="kpi-label">Settlement Count</span>
+            <div className="kpi-value">{batches.length}</div>
+            <p className="kpi-sub">Total Batches</p>
+          </div>
+          <div className="kpi-card">
+            <span className="kpi-label">Unsettled Value</span>
+            <div className="kpi-value" style={{ color: 'var(--accent-amber)' }}>{fmtINR(transactions.filter(t => t.status === 'Success' && !t.batchSettlementId).reduce((a, t) => a + t.amount, 0))}</div>
+            <p className="kpi-sub">Success txns pending settlement</p>
+          </div>
+          <div className="kpi-card">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <span className="kpi-label">Settlement Cycles</span>
+              <div style={{ fontSize: '0.775rem', color: 'var(--accent-cyan)' }}>PG: T+1</div>
+              <div style={{ fontSize: '0.775rem', color: 'var(--accent-purple)' }}>Auto-Debit: T+2</div>
+              <div style={{ fontSize: '0.775rem', color: 'var(--accent-indigo)' }}>EMI disbursement: T+3</div>
+            </div>
           </div>
         </div>
 
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Settlement ID</th>
-                <th>Settled Against (TXN)</th>
-                <th>Student</th>
-                <th>Institute</th>
-                <th>Fee Header</th>
-                <th>Amount</th>
-                <th>Mode</th>
-                <th>Settlement Date</th>
-                <th>Disbursement Date (EMI)</th>
-                <th>UTR Reference</th>
-                <th>Bank / IFSC</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredSettlements.map(s => (
-                <tr key={s.id}>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--accent-emerald)' }}>{s.id}</td>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--accent-indigo)' }}>{s.txnId}</td>
-                  <td>
-                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{s.studentName}</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      {s.studentId} · {unmaskPII ? s.studentPhone : maskPhone(s.studentPhone)}
-                    </div>
-                  </td>
-                  <td style={{ fontSize: '0.825rem' }}>{s.instituteName}</td>
-                  <td style={{ fontSize: '0.825rem' }}>{s.feeHeader}</td>
-                  <td><strong>{fmtINR(s.amount)}</strong></td>
-                  <td>{modeBadge(s.paymentMode)}</td>
-                  <td style={{ fontSize: '0.8rem' }}>{s.settlementDate}</td>
-                  <td style={{ fontSize: '0.8rem' }}>
-                    {s.paymentMode === 'EMI'
-                      ? <span style={{ color: 'var(--accent-indigo)', fontWeight: 600 }}>{s.disbursementDate}</span>
-                      : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.72rem' }}>N/A</span>
-                    }
-                  </td>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{s.utr}</td>
-                  <td style={{ fontSize: '0.75rem' }}>
-                    <div>{s.bankName}</div>
-                    <div style={{ color: 'var(--text-muted)' }}>{s.accountNo} · {s.ifsc}</div>
-                  </td>
-                  <td><span className="badge badge-success">Settled</span></td>
-                </tr>
+        <div className="card">
+          <div className="card-header">
+            <h3 className="card-title">Settlement Ledger</h3>
+            <div className="switcher">
+              {['PG','Auto-Debit','EMI'].map(m => (
+                <button key={m} className={`switch-btn ${settlModeFilter === m ? 'active' : ''}`} onClick={() => setSettlModeFilter(m)}>{m}</button>
               ))}
-              {!filteredSettlements.length && (
-                <tr><td colSpan={12} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No settlements match current filters</td></tr>
-              )}
-            </tbody>
-          </table>
+            </div>
+          </div>
+          <div className="filter-bar" style={{ borderRadius: 0, border: 'none', borderBottom: '1px solid var(--border-color)', boxShadow: 'none', padding: '0 0 1rem 0' }}>
+            <div className="filter-group">
+              <label className="filter-label">UTR / Bank Search</label>
+              <input className="filter-input" placeholder="UTR, Bank Account…" value={settlSearch}
+                onChange={e => setSettlSearch(e.target.value)} style={{ width: 200 }} />
+            </div>
+            <div className="filter-group">
+              <label className="filter-label">Settlement Date</label>
+              <div className="filter-date-range">
+                <input type="date" className="filter-input" style={{ width: 135 }} value={settlDateStart} onChange={e => setSettlDateStart(e.target.value)} />
+                <span>to</span>
+                <input type="date" className="filter-input" style={{ width: 135 }} value={settlDateEnd} onChange={e => setSettlDateEnd(e.target.value)} />
+              </div>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  {settlModeFilter === 'PG' && <>
+                    <th style={{ width: 50 }}>SR. NO.</th>
+                    <th>SETTLEMENT UTR</th>
+                    <th>SETTLEMENT AMOUNT</th>
+                    <th>BANK ACCOUNT / BANK NAME</th>
+                    <th>SETTLEMENT DATE & TIME</th>
+                    <th>Actions</th>
+                  </>}
+                  {settlModeFilter === 'Auto-Debit' && <>
+                    <th>UTR</th>
+                    <th>Settlement Amount</th>
+                    <th>Settled On</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </>}
+                  {settlModeFilter === 'EMI' && <>
+                    <th>Application ID</th>
+                    <th>Student Details</th>
+                    <th>Disbursal Type</th>
+                    <th>Repayment Status</th>
+                    <th>Settlement Amount</th>
+                    <th>Settlement Date</th>
+                    <th>Settlement UTR</th>
+                    <th>Actions</th>
+                  </>}
+                </tr>
+              </thead>
+              <tbody>
+                {batches.filter(b => {
+                  if (b.mode !== settlModeFilter) return false;
+                  if (settlSearch) {
+                    const q = settlSearch.toLowerCase();
+                    if (!b.utr.toLowerCase().includes(q) && !(b.bankAccount || '').toLowerCase().includes(q) && !(b.bankName || '').toLowerCase().includes(q)) return false;
+                  }
+                  if (settlDateStart && b.date < settlDateStart) return false;
+                  if (settlDateEnd && b.date > settlDateEnd + 'T99') return false;
+                  return true;
+                }).map((b, idx) => (
+                  <tr key={b.id}>
+                    {settlModeFilter === 'PG' && <>
+                      <td style={{ fontWeight: 600, color: 'var(--text-muted)', textAlign: 'center' }}>{String(idx + 1).padStart(2, '0')}</td>
+                      <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--accent-indigo)' }}>{b.utr}</td>
+                      <td><strong>{fmtINR(b.amount)}</strong></td>
+                      <td>
+                        <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>{b.bankAccount || '—'}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{b.bankName || '—'}</div>
+                      </td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{new Date(b.date).toLocaleString()}</td>
+                      <td style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        <button className="btn-icon" title="View Details" onClick={() => setActiveModalSettlement(b)}>
+                          <Eye size={16} color="var(--accent-indigo)" />
+                        </button>
+                        <button className="btn-icon" title="Download" onClick={() => exportCSV([b], `Settlement_${b.utr}.csv`)}>
+                          <Download size={15} color="var(--accent-emerald)" />
+                        </button>
+                      </td>
+                    </>}
+                    {settlModeFilter === 'Auto-Debit' && <>
+                      <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--accent-indigo)' }}>{b.utr}</td>
+                      <td><strong>{fmtINR(b.amount)}</strong></td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{new Date(b.date).toLocaleString()}</td>
+                      <td>{statusBadge(b.status || 'Settled')}</td>
+                      <td style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        <button className="btn-icon" title="View Details" onClick={() => setActiveModalSettlement(b)}>
+                          <Eye size={16} color="var(--accent-indigo)" />
+                        </button>
+                        <button className="btn-icon" title="Download" onClick={() => exportCSV([b], `Settlement_${b.utr}.csv`)}>
+                          <Download size={15} color="var(--accent-emerald)" />
+                        </button>
+                      </td>
+                    </>}
+                    {settlModeFilter === 'EMI' && <>
+                      <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{b.applicationId || '—'}</td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{b.studentName || '—'}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{b.studentId || '—'}</div>
+                      </td>
+                      <td>{b.disbursalType || '—'}</td>
+                      <td>{statusBadge(b.repaymentStatus || 'Ongoing')}</td>
+                      <td><strong>{fmtINR(b.amount)}</strong></td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{new Date(b.date).toLocaleString()}</td>
+                      <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--accent-indigo)' }}>{b.utr}</td>
+                      <td style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        <button className="btn-icon" title="View Details" onClick={() => setActiveModalSettlement(b)}>
+                          <Eye size={16} color="var(--accent-indigo)" />
+                        </button>
+                        <button className="btn-icon" title="Download" onClick={() => exportCSV([b], `Settlement_${b.utr}.csv`)}>
+                          <Download size={15} color="var(--accent-emerald)" />
+                        </button>
+                      </td>
+                    </>}
+                  </tr>
+                ))}
+                {!batches.filter(b => b.mode === settlModeFilter).length && (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                      <span style={{ fontSize: '2.5rem' }}>📂</span>
+                      <span style={{ fontSize: '0.95rem', fontWeight: 500 }}>No Settlement Data Available</span>
+                    </div>
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
-  );
-
+    );
+  };
   // ─── SECTION: COMMISSIONS (Top-level page) ───────────────────────────────────
   const CommissionsPage = () => (
     <div className="page-enter" style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
@@ -1468,21 +1877,12 @@ export default function App() {
                     <p className="card-subtitle">All payment attempts for this institute</p>
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Peak hour:</span>
-                        <span className="badge badge-inactive">11 AM – 1 PM</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Peak day:</span>
-                        <span className="badge badge-inactive">Mon / Fri</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Peak month:</span>
-                        <span className="badge badge-inactive">June</span>
-                      </div>
+                    <div className="switcher" style={{ marginRight: '1rem' }}>
+                      {['PG','Auto-Debit'].map(m => (
+                        <button key={m} className={`switch-btn ${drillTxnMode === m ? 'active' : ''}`} onClick={() => setDrillTxnMode(m)}>{m}</button>
+                      ))}
                     </div>
-                    <button className="btn-sm" onClick={() => exportCSV(drillTxns.map(t => ({
+                    <button className="btn-sm" onClick={() => exportCSV(drillTxns.filter(t => drillTxnMode === 'All' || t.paymentMode === drillTxnMode).map(t => ({
                       'Txn ID': t.id, 'Student Name': t.studentName, 'Student ID': t.studentId,
                       'Institute': t.instituteName, 'Fee Header': t.feeHeader, 'Amount (₹)': t.amount,
                       'Mode': t.paymentMode, 'Created On': fmtDate(t.createdAt),
@@ -1497,41 +1897,70 @@ export default function App() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Txn ID</th><th>Student</th><th>Fee Header</th><th>Amount</th>
-                        <th>Mode</th><th>Created On</th><th>Disbursement (EMI)</th><th>Status</th><th></th>
+                        {/* PG columns */}
+                        {drillTxnMode === 'PG' && <>
+                          <th>Reference ID</th>
+                          <th>Student ID</th>
+                          <th>Institute Details</th>
+                          <th>Amount Paid</th>
+                          <th>Payment Status</th>
+                          <th>Actions</th>
+                        </> }
+                        {/* Auto-Debit columns */}
+                        {drillTxnMode === 'Auto-Debit' && <>
+                          <th>Payment ID</th>
+                          <th>Student Details</th>
+                          <th>Institute Name</th>
+                          <th>Debited Amount</th>
+                          <th>Transaction Time</th>
+                          <th>Debit Status</th>
+                          <th>Settlement Status</th>
+                          <th>Actions</th>
+                        </> }
                       </tr>
                     </thead>
                     <tbody>
-                      {drillTxns.map(t => (
+                      {drillTxns.filter(t => t.paymentMode === drillTxnMode).map(t => (
                         <tr key={t.id}>
-                          <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--accent-indigo)' }}>{t.id}</td>
-                          <td>
-                            <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{t.studentName}</div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                              {t.studentId} · {unmaskPII ? t.studentPhone : maskPhone(t.studentPhone)}
-                            </div>
-                          </td>
-                          <td style={{ fontSize: '0.825rem' }}>{t.feeHeader}</td>
-                          <td><strong>{fmtINR(t.amount)}</strong></td>
-                          <td>{modeBadge(t.paymentMode)}</td>
-                          <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{fmtDate(t.createdAt)}</td>
-                          <td style={{ fontSize: '0.8rem' }}>
-                            {t.paymentMode === 'EMI'
-                              ? (t.disbursementDate
-                                ? <span style={{ color: 'var(--accent-indigo)', fontWeight: 600 }}>{t.disbursementDate}</span>
-                                : <span style={{ color: 'var(--text-muted)' }}>—</span>)
-                              : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.72rem' }}>N/A</span>}
-                          </td>
-                          <td>{statusBadge(t.status)}</td>
-                          <td>
-                            {t.status === 'Success' && (
-                              <button className="btn-sm" style={{ fontSize: '0.72rem', padding: '0.2rem 0.4rem' }} onClick={() => setReceiptTxn(t)}>
-                                <FileText size={11} />
+                          {/* PG row */}
+                          {drillTxnMode === 'PG' && <>
+                            <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--accent-indigo)' }}>{t.id}</td>
+                            <td style={{ fontSize: '0.82rem', fontWeight: 500 }}>{t.studentId}</td>
+                            <td>
+                              <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{t.instituteName}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t.feeHeader || '—'}</div>
+                            </td>
+                            <td><strong>{fmtINR(t.amount)}</strong></td>
+                            <td>{statusBadge(t.status === 'Success' ? 'SETTLED' : t.status)}</td>
+                            <td>
+                              <button className="btn-icon" title="View Details" onClick={() => setActiveModalTxn(t)}>
+                                <Eye size={16} color="var(--accent-indigo)" />
                               </button>
-                            )}
-                          </td>
+                            </td>
+                          </> }
+                          {/* Auto-Debit row */}
+                          {drillTxnMode === 'Auto-Debit' && <>
+                            <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--accent-indigo)' }}>{t.paymentId || t.id}</td>
+                            <td>
+                              <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{t.studentName}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t.studentId}</div>
+                            </td>
+                            <td style={{ fontSize: '0.82rem' }}>{t.instituteName}</td>
+                            <td><strong>{fmtINR(t.amount)}</strong></td>
+                            <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t.paidOn ? new Date(t.paidOn).toLocaleString() : new Date(t.createdAt).toLocaleString()}</td>
+                            <td>{statusBadge(t.status === 'Success' ? 'Debited' : t.status)}</td>
+                            <td>{statusBadge(t.settledAt ? 'Settled' : 'Pending')}</td>
+                            <td>
+                              <button className="btn-icon" title="View Details" onClick={() => setActiveModalTxn(t)}>
+                                <Eye size={16} color="var(--accent-indigo)" />
+                              </button>
+                            </td>
+                          </> }
                         </tr>
                       ))}
+                      {!drillTxns.filter(t => t.paymentMode === drillTxnMode).length && (
+                        <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No transactions found for {drillTxnMode}.</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2027,23 +2456,7 @@ export default function App() {
         });
       }
 
-      if (reportType === 'reconciliation') {
-        // Cross-reference: all success txns vs their settlement
-        const successTxns = transactions.filter(t => t.status === 'Success');
-        return successTxns.map(t => {
-          const s = settlements.find(st => st.txnId === t.id);
-          if (reportMode !== 'All' && t.paymentMode !== reportMode) return null;
-          if (reportInst !== 'All' && t.instituteId !== reportInst) return null;
-          return {
-            'Txn ID': t.id, 'Student': t.studentName, 'Institute': t.instituteName,
-            'Amount (₹)': t.amount, 'Mode': t.paymentMode, 'Txn Date': fmtDate(t.createdAt),
-            'Settlement ID': s?.id || '—', 'UTR': s?.utr || '—',
-            'Settlement Date': s?.settlementDate || '—',
-            'Disbursement Date': t.paymentMode === 'EMI' ? (t.disbursementDate || '—') : 'N/A',
-            'Reconciliation Status': s ? '✓ Matched' : '⚠ Unmatched'
-          };
-        }).filter(Boolean);
-      }
+
 
       return [];
     }, [reportType, reportMode, reportInst, reportStatus, reportDateStart, reportDateEnd, reportDisbStart, reportDisbEnd]);
@@ -2054,7 +2467,6 @@ export default function App() {
       { key: 'commission',       label: 'Commission Report',      desc: 'Partner revenue share by mode and institute',     icon: BarChart3,   color: 'var(--accent-cyan)' },
       { key: 'onboarding',       label: 'Student Onboarding',     desc: 'Funnel conversion rates per GILE',                icon: School,      color: 'var(--accent-purple)' },
       { key: 'gile-performance', label: 'GILE Performance',       desc: 'GMV, success rate & commissions per institute',   icon: TrendingUp,  color: 'var(--accent-amber)' },
-      { key: 'reconciliation',   label: 'Reconciliation Report',  desc: 'Cross-match transactions vs settlements',          icon: CheckCircle, color: 'var(--accent-rose)' },
     ];
 
     const totalAmt = reportPreviewData.reduce((a, r) => a + (Number(r['Amount (₹)']) || Number(r['Processed Volume (₹)']) || Number(r['Total GMV (₹)']) || 0), 0);
@@ -2125,7 +2537,7 @@ export default function App() {
               </select>
             </div>
 
-            {(reportType === 'settlement' || reportType === 'transaction' || reportType === 'gile-performance' || reportType === 'reconciliation') && (
+            {(reportType === 'settlement' || reportType === 'transaction' || reportType === 'gile-performance') && (
               <div className="filter-group">
                 <label className="filter-label">Institute</label>
                 <select className="filter-select" value={reportInst} onChange={e => { setReportInst(e.target.value); setReportGenerated(false); }}>
@@ -2159,8 +2571,8 @@ export default function App() {
               </div>
             )}
 
-            {/* EMI Disbursement filter — only for settlement, transaction, reconciliation */}
-            {(reportType === 'settlement' || reportType === 'transaction' || reportType === 'reconciliation') && (
+            {/* EMI Disbursement filter — only for settlement, transaction */}
+            {(reportType === 'settlement' || reportType === 'transaction') && (
               <div className="filter-group">
                 <label className="filter-label" style={{ color: 'var(--accent-indigo)' }}>EMI Disbursement Date</label>
                 <div className="filter-date-range">
@@ -2414,6 +2826,14 @@ export default function App() {
       </div>
 
       {/* Modals */}
+      {activeBatch && <BatchTransactionsModal batch={activeBatch} onClose={() => setActiveBatch(null)} />}
+      {activeModalSettlement && <SettlementDetailsModal batch={activeModalSettlement} onClose={() => setActiveModalSettlement(null)} />}
+      {activeModalTxn && <TransactionDetailsModal txn={activeModalTxn} onClose={() => setActiveModalTxn(null)} onDrillToSettlement={(batchId) => { 
+        setActiveModalTxn(null); 
+        setActivePage('settlements');
+        const b = batches.find(x => x.id === batchId);
+        if (b) setActiveBatch(b); 
+      }} />}
       <ReceiptModal />
       <AddTeamModal />
 
