@@ -29,7 +29,14 @@ const generateMockData = () => {
       { id: "ep1", variant: "6-Month No-Cost", category: "EMI Financing", status: "Active" },
       { id: "ep2", variant: "Credit Card / UPI", category: "Payment Gateway", status: "Active" },
       { id: "ep3", variant: "Monthly NACH", category: "Auto-Debit", status: Math.random() > 0.3 ? "Active" : "Inactive" }
-    ]
+    ],
+    funnel: {
+      applied: Math.floor(Math.random() * 500) + 200,
+      kyc: Math.floor(Math.random() * 400) + 150,
+      mandate: Math.floor(Math.random() * 350) + 100,
+      approval: Math.floor(Math.random() * 300) + 80,
+      disbursed: Math.floor(Math.random() * 250) + 50
+    }
   }));
 
   // Helper arrays
