@@ -86,6 +86,7 @@ export default function App() {
   const [searchQ, setSearchQ] = useState('');
   const [webhookModalInst, setWebhookModalInst] = useState(null);
   const [tempEvents, setTempEvents] = useState([]);
+  const [tempWebhookUrl, setTempWebhookUrl] = useState('');
 
   // Page-specific filters
   const [overviewDateStart, setOverviewDateStart] = useState('');
@@ -1722,20 +1723,16 @@ export default function App() {
                       {inst.webhookUrl ? (
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{inst.webhookUrl}</div>
                       ) : (
-                        <button className="btn-sm" style={{ color: 'var(--accent-indigo)', background: 'transparent', border: 'none', fontStyle: 'italic', padding: 0 }} onClick={() => {
-                          const url = prompt("Enter Webhook URL:", "");
-                          if (url !== null) updateWebhookUrl(inst.id, url);
-                        }}>
-                          + Set URL
-                        </button>
+                        <span style={{ fontStyle: 'italic', color: 'var(--text-muted)', fontSize: '0.75rem' }}>Not configured</span>
                       )}
                     </td>
                     <td>
                       <button className="btn-sm" style={{ background: '#fff', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={() => {
                         setWebhookModalInst(inst);
                         setTempEvents([...(inst.events || [])]);
+                        setTempWebhookUrl(inst.webhookUrl || '');
                       }}>
-                        Events
+                        Configure
                       </button>
                     </td>
                     <td>
@@ -2969,34 +2966,49 @@ export default function App() {
           <div className="modal-content" style={{ maxWidth: 450 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
-                <h3 className="modal-title">Configure Webhook Events</h3>
-                <p className="modal-subtitle">Select the events you want to receive webhook notifications for.</p>
+                <h3 className="modal-title">Configure Webhook API</h3>
+                <p className="modal-subtitle">Set your endpoint URL and subscribe to events.</p>
               </div>
               <button className="modal-close" onClick={() => setWebhookModalInst(null)}><X size={18} /></button>
             </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', paddingTop: '1rem' }}>
-              <select 
-                multiple 
-                className="filter-select" 
-                style={{ height: 120, width: '100%', fontSize: '0.875rem' }}
-                value={tempEvents}
-                onChange={e => setTempEvents(Array.from(e.target.selectedOptions, o => o.value))}
-              >
-                <option value="payment.success">payment.success</option>
-                <option value="payment.failed">payment.failed</option>
-                <option value="student.onboarded">student.onboarded</option>
-                <option value="payout.settled">payout.settled</option>
-                <option value="payout.failed">payout.failed</option>
-              </select>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1rem' }}>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingTop: '1rem' }}>
+              <div className="filter-group">
+                <label className="filter-label">Endpoint URL</label>
+                <input 
+                  type="text" 
+                  className="filter-input" 
+                  style={{ width: '100%', fontSize: '0.875rem' }} 
+                  placeholder="https://your-domain.com/webhook"
+                  value={tempWebhookUrl}
+                  onChange={e => setTempWebhookUrl(e.target.value)}
+                />
+              </div>
+              <div className="filter-group">
+                <label className="filter-label">Subscribed Events</label>
+                <select 
+                  multiple 
+                  className="filter-select" 
+                  style={{ height: 120, width: '100%', fontSize: '0.875rem' }}
+                  value={tempEvents}
+                  onChange={e => setTempEvents(Array.from(e.target.selectedOptions, o => o.value))}
+                >
+                  <option value="payment.success">payment.success</option>
+                  <option value="payment.failed">payment.failed</option>
+                  <option value="student.onboarded">student.onboarded</option>
+                  <option value="payout.settled">payout.settled</option>
+                  <option value="payout.failed">payout.failed</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
                 <button className="btn-sm" style={{ background: '#fff', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={() => setWebhookModalInst(null)}>
                   Cancel
                 </button>
                 <button className="btn-sm" style={{ background: '#111827', color: '#fff' }} onClick={() => {
+                  updateWebhookUrl(webhookModalInst.id, tempWebhookUrl);
                   updateEvents(webhookModalInst.id, tempEvents);
                   setWebhookModalInst(null);
                 }}>
-                  Save Events
+                  Save Configuration
                 </button>
               </div>
             </div>
