@@ -74,8 +74,6 @@ export default function App() {
   const [activePage, setActivePage] = useState('overview');
   const [instituteSubTab, setInstituteSubTab] = useState('oper'); // oper | tech
   const [drilldownInstId, setDrilldownInstId] = useState(null);
-  const [openGroups, setOpenGroups] = useState({ pg: true, ad: false, emi: false, fees: false, utilities: false });
-  const toggleGroup = (grp) => setOpenGroups(prev => ({ ...prev, [grp]: !prev[grp] }));
   const [drilldownSection, setDrilldownSection] = useState('txn'); // txn | settlement | commission
 
   // UI toggles
@@ -2811,22 +2809,6 @@ export default function App() {
     if (drilldownInstId) return <DrilldownPage />;
     switch (activePage) {
       case 'overview': return <OverviewPage />;
-      case 'pg-transactions': return <TransactionsPage forcedMode="PG" />;
-      case 'pg-settlements': return <SettlementsPage forcedMode="PG" />;
-      case 'ad-registrations': return <AdRegistrationsPage />;
-      case 'ad-transactions': return <TransactionsPage forcedMode="Auto-Debit" />;
-      case 'ad-settlements': return <SettlementsPage forcedMode="Auto-Debit" />;
-      case 'emi-applications': return <EmiApplicationsPage />;
-      case 'emi-products': return <EmiProductsPage />;
-      case 'emi-disbursements': return <SettlementsPage forcedMode="EMI" />;
-      case 'fees-bank': return <PlaceholderPage title="Bank Configurations" desc="Manage nodal and current account configurations for fee routing" />;
-      case 'fees-headers': return <PlaceholderPage title="Fee Headers" desc="Configure fee heads and ledgers for institutes" />;
-      case 'fees-details': return <PlaceholderPage title="Fee Details" desc="Manage granular fee structures and mapping" />;
-      case 'utilities-reports': return <ReportsPage />;
-      case 'utilities-webhooks': return <PlaceholderPage title="Webhooks" desc="Configure webhook endpoints and event subscriptions" />;
-      case 'utilities-support': return <SupportPage />;
-      
-      // Keep legacy for safety
       case 'transactions': return <TransactionsPage />;
       case 'settlements': return <SettlementsPage />;
       case 'commissions': return <CommissionsPage />;
@@ -2849,78 +2831,23 @@ export default function App() {
         </div>
 
         <ul className="sidebar-menu">
-          <li className="sidebar-section-label">Main</li>
+          <li className="sidebar-section-label">Analytics</li>
           <NavItem icon={LayoutDashboard} label="Overview" pageKey="overview" />
-          
-          <div className="sidebar-group">
-            <div className="sidebar-group-header" onClick={() => toggleGroup('pg')}>
-              <CreditCard size={15} /> <span>PG</span>
-            </div>
-            {openGroups.pg && (
-              <div className="sidebar-group-items">
-                <NavItem label="Transactions" pageKey="pg-transactions" />
-                <NavItem label="Settlement" pageKey="pg-settlements" />
-              </div>
-            )}
-          </div>
 
-          <div className="sidebar-group">
-            <div className="sidebar-group-header" onClick={() => toggleGroup('ad')}>
-              <Activity size={15} /> <span>Auto Debit</span>
-            </div>
-            {openGroups.ad && (
-              <div className="sidebar-group-items">
-                <NavItem label="Registrations" pageKey="ad-registrations" />
-                <NavItem label="Transactions" pageKey="ad-transactions" />
-                <NavItem label="Settlements" pageKey="ad-settlements" />
-              </div>
-            )}
-          </div>
-
-          <div className="sidebar-group">
-            <div className="sidebar-group-header" onClick={() => toggleGroup('emi')}>
-              <Wallet size={15} /> <span>EMI</span>
-            </div>
-            {openGroups.emi && (
-              <div className="sidebar-group-items">
-                <NavItem label="Applications" pageKey="emi-applications" />
-                <NavItem label="Products" pageKey="emi-products" />
-                <NavItem label="Disbursements" pageKey="emi-disbursements" />
-              </div>
-            )}
-          </div>
-
-          <div className="sidebar-group">
-            <div className="sidebar-group-header" onClick={() => toggleGroup('fees')}>
-              <Database size={15} /> <span>FEES</span>
-            </div>
-            {openGroups.fees && (
-              <div className="sidebar-group-items">
-                <NavItem label="Bank" pageKey="fees-bank" />
-                <NavItem label="Fee Headers" pageKey="fees-headers" />
-                <NavItem label="Fee Details" pageKey="fees-details" />
-              </div>
-            )}
-          </div>
-
-          <div className="sidebar-group">
-            <div className="sidebar-group-header" onClick={() => toggleGroup('utilities')}>
-              <HelpCircle size={15} /> <span>UTILITIES</span>
-            </div>
-            {openGroups.utilities && (
-              <div className="sidebar-group-items">
-                <NavItem label="Reports" pageKey="utilities-reports" />
-                <NavItem label="Webhooks" pageKey="utilities-webhooks" />
-                <NavItem label="Support" pageKey="utilities-support" />
-              </div>
-            )}
-          </div>
-          
-          <li className="sidebar-section-label" style={{marginTop:'1.5rem'}}>Legacy Admin</li>
-          <NavItem icon={School} label="Institutes App" pageKey="institutes" />
-          <NavItem icon={Users} label="Team" pageKey="team" />
+          <li className="sidebar-section-label">Finance</li>
+          <NavItem icon={CreditCard} label="Transactions" pageKey="transactions" />
+          <NavItem icon={Wallet} label="Settlements" pageKey="settlements" />
           <NavItem icon={BarChart3} label="Commissions" pageKey="commissions" />
-          
+          <NavItem icon={FileText} label="Reports" pageKey="reports" />
+
+          <li className="sidebar-section-label">Operations</li>
+          <NavItem icon={School} label="Institutes App" pageKey="institutes" />
+          <NavItem icon={Database} label="Product Catalog" pageKey="products" />
+
+          <li className="sidebar-section-label">Admin</li>
+          <NavItem icon={Users} label="Team Management" pageKey="team" />
+          <NavItem icon={Activity} label="Activity Logs" pageKey="logs" />
+          <NavItem icon={HelpCircle} label="Support" pageKey="support" />
         </ul>
 
         <div className="sidebar-footer">
