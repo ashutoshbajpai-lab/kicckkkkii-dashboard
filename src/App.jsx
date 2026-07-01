@@ -102,7 +102,7 @@ export default function App() {
   const [txnSearch, setTxnSearch] = useState('');
   const [txnUtrFilter, setTxnUtrFilter] = useState('');
   const [drillTxnMode, setDrillTxnMode] = useState('PG');
-  const [drillSettlMode, setDrillSettlMode] = useState('All');
+  const [drillSettlMode, setDrillSettlMode] = useState('PG');
 
   // Settlements page filters
   const [settlModeFilter, setSettlModeFilter] = useState('PG');
@@ -341,7 +341,10 @@ export default function App() {
   // Drilldown derived
   const drillInst = useMemo(() => institutes.find(i => i.id === drilldownInstId), [institutes, drilldownInstId]);
   const drillTxns = useMemo(() => transactions.filter(t => t.instituteId === drilldownInstId), [transactions, drilldownInstId]);
-  const drillSettlements = useMemo(() => settlements.filter(s => s.instituteId === drilldownInstId), [settlements, drilldownInstId]);
+  const drillBatches = useMemo(() => batches.filter(b => {
+    if (b.mode === 'EMI') return b.institute === drillInst?.name;
+    return drillTxns.some(t => t.batchSettlementId === b.id);
+  }), [batches, drillTxns, drillInst]);
   const drillComms = useMemo(() => transactions.filter(t => t.instituteId === drilldownInstId && t.status === 'Success'), [transactions, drilldownInstId]);
   const drillGMV = useMemo(() => drillTxns.filter(t => t.status === 'Success').reduce((a, t) => a + t.amount, 0), [drillTxns]);
   const totalNetworkGMV = useMemo(() => transactions.filter(t => t.status === 'Success').reduce((a, t) => a + t.amount, 0), [transactions]);
@@ -1970,17 +1973,17 @@ export default function App() {
             {drilldownSection === 'settlement' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
+                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                     <h3 className="card-title">Settlement Records</h3>
-                    <p className="card-subtitle">Funds credited to institute accounts · Disbursement applicable for EMI only</p>
+                    <div className="switcher">
+                      {['PG','Auto-Debit','EMI'].map(m => (
+                        <button key={m} className={`switch-btn ${drillSettlMode === m ? 'active' : ''}`} onClick={() => setDrillSettlMode(m)}>{m}</button>
+                      ))}
+                    </div>
                   </div>
-                  <button className="btn-sm" onClick={() => exportCSV(drillSettlements.map(s => ({
-                    'Settlement ID': s.id, 'Txn Ref': s.txnId, 'Student Name': s.studentName, 'Student ID': s.studentId,
-                    'Institute': s.instituteName, 'Fee Header': s.feeHeader, 'Amount (₹)': s.amount,
-                    'Mode': s.paymentMode, 'Settlement Date': s.settlementDate,
-                    'Disbursement Date': s.paymentMode === 'EMI' ? s.disbursementDate : 'N/A',
-                    'UTR': s.utr, 'Bank Name': s.bankName, 'Account No': s.accountNo, 'IFSC': s.ifsc, 'Status': 'Settled'
-                  })), `Settlements_${drillInst?.slug}.csv`)}>
+                  <button className="btn-sm" onClick={() => exportCSV(drillBatches.filter(b => b.mode === drillSettlMode).map(b => ({
+                    'Batch ID': b.id, 'Mode': b.mode, 'Amount': b.amount, 'Date': b.date, 'UTR': b.utr, 'Status': b.status
+                  })), `Settlements_${drillInst?.slug}_${drillSettlMode}.csv`)}>
                     <Download size={13} />Export
                   </button>
                 </div>
@@ -1988,39 +1991,86 @@ export default function App() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Settlement ID</th><th>Settled Against (TXN)</th><th>Student</th>
-                        <th>Fee Header</th><th>Amount</th><th>Mode</th>
-                        <th>Settlement Date</th><th>Disbursement Date (EMI)</th>
-                        <th>UTR</th><th>Bank</th>
+                        {drillSettlMode === 'PG' && <>
+                          <th style={{ width: 50 }}>SR. NO.</th>
+                          <th>SETTLEMENT UTR</th>
+                          <th>SETTLEMENT AMOUNT</th>
+                          <th>BANK ACCOUNT / BANK NAME</th>
+                          <th>SETTLEMENT DATE & TIME</th>
+                          <th>Actions</th>
+                        </>}
+                        {drillSettlMode === 'Auto-Debit' && <>
+                          <th>UTR</th>
+                          <th>Settlement Amount</th>
+                          <th>Settled On</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </>}
+                        {drillSettlMode === 'EMI' && <>
+                          <th>Application ID</th>
+                          <th>Student Details</th>
+                          <th>Disbursal Type</th>
+                          <th>Repayment Status</th>
+                          <th>Settlement Amount</th>
+                          <th>Settlement Date</th>
+                          <th>Settlement UTR</th>
+                          <th>Actions</th>
+                        </>}
                       </tr>
                     </thead>
                     <tbody>
-                      {drillSettlements.map(s => (
-                        <tr key={s.id}>
-                          <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--accent-emerald)' }}>{s.id}</td>
-                          <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--accent-indigo)' }}>{s.txnId}</td>
-                          <td>
-                            <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{s.studentName}</div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                              {s.studentId} · {unmaskPII ? s.studentPhone : maskPhone(s.studentPhone)}
-                            </div>
-                          </td>
-                          <td style={{ fontSize: '0.825rem' }}>{s.feeHeader}</td>
-                          <td><strong>{fmtINR(s.amount)}</strong></td>
-                          <td>{modeBadge(s.paymentMode)}</td>
-                          <td style={{ fontSize: '0.8rem' }}>{s.settlementDate}</td>
-                          <td style={{ fontSize: '0.8rem' }}>
-                            {s.paymentMode === 'EMI'
-                              ? <span style={{ color: 'var(--accent-indigo)', fontWeight: 600 }}>{s.disbursementDate}</span>
-                              : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.72rem' }}>N/A</span>}
-                          </td>
-                          <td style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{s.utr}</td>
-                          <td style={{ fontSize: '0.75rem' }}>
-                            <div>{s.bankName}</div>
-                            <div style={{ color: 'var(--text-muted)' }}>{s.accountNo}</div>
-                          </td>
+                      {drillBatches.filter(b => b.mode === drillSettlMode).map((b, idx) => (
+                        <tr key={b.id}>
+                          {drillSettlMode === 'PG' && <>
+                            <td style={{ fontWeight: 600, color: 'var(--text-muted)', textAlign: 'center' }}>{String(idx + 1).padStart(2, '0')}</td>
+                            <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--accent-indigo)' }}>{b.utr}</td>
+                            <td><strong>{fmtINR(b.amount)}</strong></td>
+                            <td>
+                              <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>{b.bankAccount || '—'}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{b.bankName || '—'}</div>
+                            </td>
+                            <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{new Date(b.date).toLocaleString()}</td>
+                            <td style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                              <button className="btn-icon" title="View Details" onClick={() => setActiveModalSettlement(b)}>
+                                <Eye size={16} color="var(--accent-indigo)" />
+                              </button>
+                            </td>
+                          </>}
+                          {drillSettlMode === 'Auto-Debit' && <>
+                            <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--accent-indigo)' }}>{b.utr}</td>
+                            <td><strong>{fmtINR(b.amount)}</strong></td>
+                            <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{new Date(b.date).toLocaleString()}</td>
+                            <td>{statusBadge(b.status || 'Settled')}</td>
+                            <td style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                              <button className="btn-icon" title="View Details" onClick={() => setActiveModalSettlement(b)}>
+                                <Eye size={16} color="var(--accent-indigo)" />
+                              </button>
+                            </td>
+                          </>}
+                          {drillSettlMode === 'EMI' && <>
+                            <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{b.applicationId || '—'}</td>
+                            <td>
+                              <div style={{ fontWeight: 600 }}>{b.studentName || '—'}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{b.studentId || '—'}</div>
+                            </td>
+                            <td>{b.disbursalType || '—'}</td>
+                            <td>{statusBadge(b.repaymentStatus || 'Ongoing')}</td>
+                            <td><strong>{fmtINR(b.amount)}</strong></td>
+                            <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{new Date(b.date).toLocaleString()}</td>
+                            <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--accent-indigo)' }}>{b.utr}</td>
+                            <td style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                              <button className="btn-icon" title="View Details" onClick={() => setActiveModalSettlement(b)}>
+                                <Eye size={16} color="var(--accent-indigo)" />
+                              </button>
+                            </td>
+                          </>}
                         </tr>
                       ))}
+                      {!drillBatches.filter(b => b.mode === drillSettlMode).length && (
+                        <tr><td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                          No settlement records found for {drillSettlMode}.
+                        </td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
