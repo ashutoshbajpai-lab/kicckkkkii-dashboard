@@ -2202,12 +2202,7 @@ export default function App() {
       <PageHeader title="Support" subtitle="Get help, raise tickets, and access documentation" />
       <div className="support-grid">
         {[
-          { icon: MessageSquare, title: 'Raise a Ticket', desc: 'Submit a support request and track it in real-time.', btn: 'Open Ticket', color: 'var(--accent-indigo)' },
-          { icon: Phone, title: 'Partner Hotline', desc: 'Call your dedicated partner success manager.', btn: '+91 1800-XXX-XXXX', color: 'var(--accent-emerald)' },
-          { icon: Mail, title: 'Email Support', desc: 'Write to us and expect a response within 4 business hours.', btn: 'partner@grayquest.com', color: 'var(--accent-cyan)' },
-          { icon: BookOpen, title: 'Documentation', desc: 'API references, webhook guides, and integration docs.', btn: 'View Docs', color: 'var(--accent-purple)' },
-          { icon: ExternalLink, title: 'System Status', desc: 'Check real-time API health and uptime metrics.', btn: 'status.grayquest.com', color: 'var(--accent-amber)' },
-          { icon: Shield, title: 'Compliance & Security', desc: 'PCI-DSS compliance docs and security disclosures.', btn: 'View Policy', color: 'var(--accent-rose)' }
+          { icon: MessageSquare, title: 'Raise a Ticket', desc: 'Submit a support request and track it in real-time.', btn: 'Open Ticket', color: 'var(--accent-indigo)' }
         ].map(card => (
           <div key={card.title} className="support-card">
             <div className="support-icon" style={{ background: `${card.color}18`, color: card.color }}>
