@@ -415,11 +415,10 @@ export default function App() {
     );
   }
 
-  // ─── HELPER: Nav item ────────────────────────────────────────────────────────
   const NavItem = ({ icon: Icon, label, pageKey }) => (
     <li className={`sidebar-item ${activePage === pageKey && !drilldownInstId ? 'active' : ''}`}
       onClick={() => navigate(pageKey)}>
-      <Icon size={16} className="nav-icon" />
+      {Icon && <Icon size={16} className="nav-icon" />}
       <span>{label}</span>
     </li>
   );
